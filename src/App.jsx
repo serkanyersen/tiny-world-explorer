@@ -206,6 +206,8 @@ function App() {
     return () => window.removeEventListener('mouseup', handleMouseUp);
   }, []);
 
+
+
   // Dynamic Kernel Generation
   const sharpenMatrix = useMemo(() => {
     // Identity: 0 0 0 0 1 0 0 0 0
@@ -243,6 +245,19 @@ function App() {
         }
     }
   };
+
+  // Keyboard shortcut for taking photos (Spacebar)
+  // Many physical camera buttons emulate a spacebar press.
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+        if (e.code === 'Space' || e.key === 'Enter') {
+            e.preventDefault(); // Prevent scrolling
+            handleTakePhoto();
+        }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleTakePhoto]);
 
   const handleToggleRecord = async () => {
     if (isRecording) {
@@ -406,6 +421,8 @@ function App() {
                 <option value="1/1" style={{color: 'black'}}>1:1</option>
                 <option value="native" style={{color: 'black'}}>Native</option>
             </select>
+
+
         </div>
       </header>
 
