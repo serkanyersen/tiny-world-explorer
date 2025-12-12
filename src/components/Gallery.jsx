@@ -60,6 +60,32 @@ export const Gallery = ({ mediaItems, onClose }) => {
             }}
             onClick={() => setSelectedItem(item)}
           >
+            <a
+                href={item.url}
+                download={`tiny-world-${item.type}-${item.date.getTime()}.${item.type === 'video' ? 'webm' : 'png'}`}
+                style={{
+                  position: 'absolute',
+                  top: '8px',
+                  right: '8px',
+                  width: '32px',
+                  height: '32px',
+                  background: 'rgba(0, 0, 0, 0.5)',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  textDecoration: 'none',
+                  fontSize: '16px',
+                  zIndex: 10,
+                  border: '1px solid rgba(255,255,255,0.3)'
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                }}
+                title="Download"
+            >
+              ⬇️
+            </a>
             {item.type === 'image' ? (
               <img src={item.url} alt={`Capture ${index}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : (

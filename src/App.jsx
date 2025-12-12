@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useCamera } from './hooks/useCamera';
 import { ControlPanel } from './components/ControlPanel';
+
 import { Gallery } from './components/Gallery';
+import { Minimap } from './components/Minimap';
 import './index.css';
 
 const DEFAULT_FILTERS = {
@@ -10,7 +12,12 @@ const DEFAULT_FILTERS = {
   contrast: 100,
   saturate: 100,
   sepia: 0,
+
   invert: 0,
+  edgeDetection: false,
+  falseColor: false,
+  emboss: 0,
+  sharpen: 0,
   grid: false,
   crosshair: false
 };
@@ -38,6 +45,11 @@ function App() {
   const [splitMode, setSplitMode] = useState(false);
   const [frozenFrame, setFrozenFrame] = useState(null);
   const [showControls, setShowControls] = useState(true);
+
+  // Pan State (Normalized -0.5 to 0.5)
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const isDraggingRef = useRef(false);
+  const lastMousePosRef = useRef({ x: 0, y: 0 });
 
   // Prevent saving settings while we are loading them
   const isLoadedRef = useRef(false);
@@ -94,15 +106,124 @@ function App() {
     localStorage.setItem(`camera_settings_${selectedDeviceId}`, JSON.stringify(settings));
   }, [filters, aspectRatio, compatibilityMode, selectedDeviceId]);
 
-  const videoStyle = useMemo(() => ({
-    maxWidth: '100%',
-    maxHeight: '100%',
-    aspectRatio: aspectRatio === 'native' ? 'auto' : aspectRatio,
-    objectFit: 'fill', // Force stretch to fix distortion
-    transform: `scale(${filters.zoom})`,
-    filter: `brightness(${filters.brightness}%) contrast(${filters.contrast}%) saturate(${filters.saturate}%) sepia(${filters.sepia}%) invert(${filters.invert}%)`,
-    transition: 'transform 0.1s ease-out, filter 0.1s ease-out'
-  }), [filters, aspectRatio]);
+  const videoStyle = useMemo(() => {
+    // Safety: Force pan to 0 if zoom is 1
+    const effectivePan = filters.zoom === 1 ? { x: 0, y: 0 } : pan;
+
+    return {
+        maxWidth: '100%',
+        maxHeight: '100%',
+        aspectRatio: aspectRatio === 'native' ? 'auto' : aspectRatio,
+        objectFit: 'fill', // Force stretch to fix distortion
+        transform: `translate(${effectivePan.x * 100}%, ${effectivePan.y * 100}%) scale(${filters.zoom})`,
+        filter: `brightness(${filters.brightness}%) contrast(${filters.contrast}%) saturate(${filters.saturate}%) sepia(${filters.sepia}%) invert(${filters.invert}%) ${filters.edgeDetection ? 'url(#edge-detection)' : ''} ${filters.falseColor ? 'url(#false-color)' : ''} ${filters.emboss > 0 ? 'url(#emboss)' : ''} ${filters.sharpen > 0 ? 'url(#sharpen)' : ''}`,
+        transition: isDraggingRef.current ? 'none' : 'transform 0.1s ease-out, filter 0.1s ease-out'
+    };
+  }, [filters, aspectRatio, pan]);
+
+  // Reset pan when zoom is 1
+  useEffect(() => {
+    if (filters.zoom === 1) {
+        setPan({ x: 0, y: 0 });
+    }
+  }, [filters.zoom]);
+
+  // Pan Logic Handlers
+  const handlePanChange = (newX, newY) => {
+     // Constrain Pan
+     if (filters.zoom <= 1) return;
+     const maxPan = (filters.zoom - 1) / 2;
+
+     // Clamp
+     const clampedX = Math.max(-maxPan, Math.min(maxPan, newX));
+     const clampedY = Math.max(-maxPan, Math.min(maxPan, newY));
+
+     setPan({ x: clampedX, y: clampedY });
+  };
+
+  const handleMouseDown = (e) => {
+    if (filters.zoom > 1 && !splitMode) {
+        isDraggingRef.current = true;
+        lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+        e.preventDefault(); // Prevent text selection
+    }
+  };
+
+  const handleMouseMove = (e) => {
+    if (isDraggingRef.current && videoRef.current) {
+        const deltaX = e.clientX - lastMousePosRef.current.x;
+        const deltaY = e.clientY - lastMousePosRef.current.y;
+
+        lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+
+        // Convert pixel delta to percentage
+        const rect = videoRef.current.getBoundingClientRect();
+        // NOTE: rect.width is the SCALED width.
+        // We want delta relative to the ORIGINAL container width (because translate % is based on element size)
+        // Wait, element size is constant (100% of container). Scale is applied visuals.
+        // videoRef.current.offsetWidth is unscaled width? Yes.
+
+        const w = videoRef.current.offsetWidth;
+        const h = videoRef.current.offsetHeight;
+
+        // Update Pan
+        // If I drag mouse Right (positive delta), Image should move Right (positive translate).
+        // Correct.
+
+        const panDeltaX = deltaX / w;
+        const panDeltaY = deltaY / h;
+
+        // Use functional state to avoid stale closure during rapid updates if we used that,
+        // but here we have access to 'pan' via closure?
+        // Better to check current constraints.
+
+        // Actually, we must use the clamped logic.
+        // Let's call helper.
+        // We need 'current pan' + delta.
+        // Since event handler closes over 'pan', it might change.
+        // Let's use setPan callback.
+
+        setPan(prev => {
+             const maxPan = (filters.zoom - 1) / 2;
+             const nx = prev.x + panDeltaX;
+             const ny = prev.y + panDeltaY;
+
+             return {
+                x: Math.max(-maxPan, Math.min(maxPan, nx)),
+                y: Math.max(-maxPan, Math.min(maxPan, ny))
+             };
+        });
+    }
+  };
+
+  const handleMouseUp = () => {
+    isDraggingRef.current = false;
+  };
+
+  // Attach global mouse up to catch dragging outside
+  useEffect(() => {
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => window.removeEventListener('mouseup', handleMouseUp);
+  }, []);
+
+  // Dynamic Kernel Generation
+  const sharpenMatrix = useMemo(() => {
+    // Identity: 0 0 0 0 1 0 0 0 0
+    // Target: 0 -1 0 -1 5 -1 0 -1 0
+    // Diff:   0 -1 0 -1 4 -1 0 -1 0
+    // Factor s: 0 to 3
+    const s = (filters.sharpen / 100) * 15;
+    return `0 ${-s} 0 ${-s} ${1 + 4 * s} ${-s} 0 ${-s} 0`;
+  }, [filters.sharpen]);
+
+  const embossMatrix = useMemo(() => {
+    // Identity: 0 0 0 0 1 0 0 0 0
+    // Target: -2 -1 0 -1 1 1 0 1 2
+    // Diff:   -2 -1 0 -1 0 1 0 1 2
+    // Factor s: 0 to 3
+    const s = (filters.emboss / 100) * 3;
+    return `${-2 * s} ${-1 * s} 0 ${-1 * s} 1 ${1 * s} 0 ${1 * s} ${2 * s}`;
+  }, [filters.emboss]);
 
   useEffect(() => {
     if (videoRef.current && stream) {
@@ -149,6 +270,46 @@ function App() {
 
   return (
     <div className="app-container" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+
+      {/* SVG Filters Definition */}
+      <svg style={{ position: 'absolute', width: 0, height: 0, pointerEvents: 'none' }}>
+        <defs>
+          <filter id="edge-detection">
+            <feConvolveMatrix
+              order="3"
+              kernelMatrix="-1 -1 -1 -1 8 -1 -1 -1 -1"
+              preserveAlpha="true"
+            />
+            <feColorMatrix type="saturate" values="0"/>
+          </filter>
+
+          <filter id="false-color">
+             <feColorMatrix type="luminanceToAlpha"/>
+             <feComponentTransfer>
+                <feFuncR type="table" tableValues="0 0 1 1"/>
+                <feFuncG type="table" tableValues="0 1 1 0"/>
+                <feFuncB type="table" tableValues="1 0 0 0"/>
+             </feComponentTransfer>
+          </filter>
+
+          <filter id="emboss">
+             <feConvolveMatrix
+                order="3"
+                kernelMatrix={embossMatrix}
+                preserveAlpha="true"
+             />
+          </filter>
+
+          <filter id="sharpen">
+             <feConvolveMatrix
+                order="3"
+                kernelMatrix={sharpenMatrix}
+                preserveAlpha="true"
+             />
+          </filter>
+        </defs>
+      </svg>
+
       {/* Header / Top Bar */}
       <header className="glass-panel" style={{
         zIndex: 20,
@@ -338,14 +499,21 @@ function App() {
                 )}
 
                 {/* Live Video Side */}
-                <div style={{
-                    flex: 1,
-                    position: 'relative',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: '#000'
-                }}>
+                <div
+                    style={{
+                        flex: 1,
+                        position: 'relative',
+                        cursor: filters.zoom > 1 && !splitMode ? 'grab' : 'default',
+                        overflow: 'hidden', // Ensure zoomed content doesn't spill
+                        touchAction: 'none', // Prevent scroll on touch
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: '#000'
+                    }}
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                >
                     <video
                     ref={videoRef}
                     autoPlay
@@ -408,6 +576,13 @@ function App() {
             {showControls && (
                 <ControlPanel filters={filters} setFilters={setFilters} onReset={resetFilters} />
             )}
+
+            <Minimap
+                stream={stream}
+                zoom={filters.zoom}
+                pan={pan}
+                onPanChange={handlePanChange}
+            />
           </>
         )}
       </main>

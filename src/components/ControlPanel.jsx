@@ -1,16 +1,16 @@
 import React from 'react';
 
-const ControlRow = ({ label, value, min, max, onChange, unit = '' }) => (
+const ControlRow = ({ label, value, min, max, onChange, unit = '', step = 1 }) => (
   <div style={{ marginBottom: '16px' }}>
     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
       <span>{label}</span>
-      <span>{Math.round(value)}{unit}</span>
+      <span>{Number.isInteger(step) ? Math.round(value) : value.toFixed(1)}{unit}</span>
     </div>
     <input
       type="range"
       min={min}
       max={max}
-      step="1"
+      step={step}
       value={value}
       onChange={(e) => onChange(parseFloat(e.target.value))}
       style={{
@@ -23,6 +23,32 @@ const ControlRow = ({ label, value, min, max, onChange, unit = '' }) => (
         outline: 'none'
       }}
     />
+  </div>
+);
+
+const Toggle = ({ checked, onChange }) => (
+  <div
+    onClick={() => onChange(!checked)}
+    style={{
+      width: '40px',
+      height: '20px',
+      background: checked ? 'var(--color-primary)' : 'rgba(255,255,255,0.2)',
+      borderRadius: '99px',
+      position: 'relative',
+      cursor: 'pointer',
+      transition: 'background 0.2s'
+    }}
+  >
+    <div style={{
+      width: '16px',
+      height: '16px',
+      background: 'white',
+      borderRadius: '50%',
+      position: 'absolute',
+      top: '2px',
+      left: checked ? '22px' : '2px',
+      transition: 'left 0.2s'
+    }} />
   </div>
 );
 
@@ -74,6 +100,7 @@ export const ControlPanel = ({ filters, setFilters, onReset }) => {
         value={filters.zoom}
         min={1}
         max={5}
+        step={0.1}
         // Use smaller step for smoother zoom
         onChange={(v) => updateFilter('zoom', v)}
         unit="x"
@@ -123,6 +150,44 @@ export const ControlPanel = ({ filters, setFilters, onReset }) => {
         min={0}
         max={100}
         onChange={(v) => updateFilter('invert', v)}
+        unit="%"
+      />
+
+      <div style={{ height: '1px', background: 'var(--color-border)', margin: '16px 0' }} />
+
+      <h4 style={{ marginBottom: '12px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>Analysis Mode</h4>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+        <span>Edge Detection</span>
+        <Toggle
+          checked={filters.edgeDetection}
+          onChange={(checked) => updateFilter('edgeDetection', checked)}
+        />
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+        <span>False Color (Heatmap)</span>
+        <Toggle
+          checked={filters.falseColor}
+          onChange={(checked) => updateFilter('falseColor', checked)}
+        />
+      </div>
+
+      <ControlRow
+        label="Emboss"
+        value={filters.emboss}
+        min={0}
+        max={100}
+        onChange={(v) => updateFilter('emboss', v)}
+        unit="%"
+      />
+
+      <ControlRow
+        label="Sharpen"
+        value={filters.sharpen}
+        min={0}
+        max={100}
+        onChange={(v) => updateFilter('sharpen', v)}
         unit="%"
       />
 
