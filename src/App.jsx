@@ -336,7 +336,7 @@ function App() {
         flexShrink: 0
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <img src="/src/assets/logo.png" alt="Logo" style={{ width: '32px', height: '32px', borderRadius: '50%' }} />
+          <img src="/logo.png" alt="Logo" style={{ width: '32px', height: '32px', borderRadius: '50%' }} />
           <h1 style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--color-primary)' }}>Tiny World Explorer</h1>
         </div>
 
