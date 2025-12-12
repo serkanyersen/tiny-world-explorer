@@ -25,9 +25,30 @@ export const useCamera = () => {
     }
   }, [selectedDeviceId]);
 
-  // Initial device scan
+  // Initial device scan & Permission Trigger
   useEffect(() => {
-    getDevices();
+    const init = async () => {
+        try {
+            // Check if we have labels (implies permission granted)
+            const initialDevices = await navigator.mediaDevices.enumerateDevices();
+            const hasLabels = initialDevices.some(d => d.kind === 'videoinput' && d.label);
+
+            if (!hasLabels) {
+                // Force permission prompt
+                console.log("Requesting initial permission...");
+                const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                // We got permission! cleanup temp stream
+                tempStream.getTracks().forEach(t => t.stop());
+            }
+        } catch (e) {
+            console.warn("Permission check failed:", e);
+        } finally {
+            // Always refresh list
+            getDevices();
+        }
+    };
+
+    init();
     navigator.mediaDevices.addEventListener('devicechange', getDevices);
     return () => navigator.mediaDevices.removeEventListener('devicechange', getDevices);
   }, [getDevices]);
